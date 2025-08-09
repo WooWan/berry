@@ -1,7 +1,9 @@
 import {BaseCommand, WorkspaceRequiredError}                from '@yarnpkg/cli';
 import {Cache, Configuration, Manifest, Project, Workspace} from '@yarnpkg/core';
 import {structUtils}                                        from '@yarnpkg/core';
+import {gitUtils}                                           from '@yarnpkg/plugin-git';
 import {Command, Option, Usage}                             from 'clipanion';
+import * as t                                               from 'typanion';
 
 // eslint-disable-next-line arca/no-default-export
 export default class WorkspacesFocusCommand extends BaseCommand {
@@ -18,6 +20,8 @@ export default class WorkspacesFocusCommand extends BaseCommand {
       Note that this command is only very moderately useful when using zero-installs, since the cache will contain all the packages anyway - meaning that the only difference between a full install and a focused install would just be a few extra lines in the \`.pnp.cjs\` file, at the cost of introducing an extra complexity.
 
       If the \`-A,--all\` flag is set, the entire project will be installed. Combine with \`--production\` to replicate the old \`yarn install --production\`.
+
+      If the \`--since\` flag is set, Yarn will only focus on workspaces that have been modified since the specified ref. By default Yarn will use the refs specified by the \`changesetBaseRefs\` configuration option.
     `,
   });
 
@@ -35,6 +39,15 @@ export default class WorkspacesFocusCommand extends BaseCommand {
 
   workspaces = Option.Rest();
 
+  since = Option.String(`--since`, {
+    description: `Only focus on workspaces that have been changed since the specified ref.`,
+    tolerateBoolean: true,
+  });
+
+  static schema = [
+    t.hasMutuallyExclusiveKeys([`all`, `since`]),
+  ];
+
   async execute() {
     const configuration = await Configuration.find(this.context.cwd, this.context.plugins);
     const {project, workspace} = await Project.find(configuration, this.context.cwd);
@@ -45,7 +58,9 @@ export default class WorkspacesFocusCommand extends BaseCommand {
     });
 
     let requiredWorkspaces: Set<Workspace>;
-    if (this.all) {
+    if (this.since) {
+      requiredWorkspaces = new Set(await gitUtils.fetchChangedWorkspaces({ref: this.since, project}));
+    } else if (this.all) {
       requiredWorkspaces = new Set(project.workspaces);
     } else if (this.workspaces.length === 0) {
       if (!workspace)

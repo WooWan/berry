@@ -1,4 +1,5 @@
 import {ppath, xfs} from '@yarnpkg/fslib';
+const {exec: {execFile}} = require(`pkg-tests-core`);
 
 describe(`Commands`, () => {
   describe(`workspaces focus`, () => {
@@ -27,6 +28,37 @@ describe(`Commands`, () => {
           ]);
         },
       ),
+    );
+
+    test(
+      `--since runs on no workspaces if there have been no changes`,
+      makeWorkspacesFocusSinceEnv(async ({path, run}) => {
+        const cacheFolder = ppath.join(path, `.yarn/cache`);
+        await xfs.removePromise(cacheFolder);
+
+        await run(`workspaces`, `focus`, `--since`, {cwd: path});
+
+        await expect(xfs.readdirPromise(cacheFolder)).resolves.toEqual([
+          `.gitignore`,
+        ]);
+      }),
+    );
+
+    test(
+      `--since focuses only changed workspaces`,
+      makeWorkspacesFocusSinceEnv(async ({path, run}) => {
+        const cacheFolder = ppath.join(path, `.yarn/cache`);
+        await xfs.removePromise(cacheFolder);
+
+        await xfs.writeJsonPromise(ppath.join(path, `packages/foo/delta.json`), {});
+
+        await run(`workspaces`, `focus`, `--since`, {cwd: path});
+
+        await expect(xfs.readdirPromise(cacheFolder)).resolves.toEqual([
+          `.gitignore`,
+          expect.stringContaining(`no-deps-npm-1.0.0-`),
+        ]);
+      }),
     );
 
     test(
@@ -219,4 +251,29 @@ async function setupProject(path) {
   await pkg(`baz`, {[`bar`]: `workspace:*`});
   await pkg(`qux`, {[`no-deps`]: `1.0.0`}, {[`no-deps-bins`]: `1.0.0`}, {postinstall: `echo 'postinstall' > postinstall.log`});
   await pkg(`quux`, {[`no-deps`]: `1.0.0`}, {[`bar`]: `workspace:*`});
+}
+
+function makeWorkspacesFocusSinceEnv(cb) {
+  return makeTemporaryEnv({
+    private: true,
+    workspaces: [`packages/*`],
+  }, async ({path, run, ...rest}) => {
+    await setupProject(path);
+
+    const git = (...args) => execFile(`git`, args, {cwd: path});
+
+    await run(`install`);
+
+    await git(`init`, `.`);
+
+    // Otherwise we can't always commit
+    await git(`config`, `user.name`, `John Doe`);
+    await git(`config`, `user.email`, `john.doe@example.org`);
+    await git(`config`, `commit.gpgSign`, `false`);
+
+    await git(`add`, `.`);
+    await git(`commit`, `-m`, `First commit`);
+
+    await cb({path, run, ...rest, git});
+  });
 }
