@@ -362,5 +362,49 @@ describe(`Features`, () => {
         },
       ),
     );
+
+    test(
+      `it should resolve catalog references in workspace peer dependencies`,
+      makeTemporaryMonorepoEnv(
+        {
+          workspaces: [`packages/*`],
+        },
+        {
+          packages: {},
+        },
+        async ({path, run}) => {
+          await xfs.mkdirPromise(`${path}/packages/my-lib` as PortablePath, {recursive: true});
+          await xfs.writeJsonPromise(`${path}/packages/my-lib/package.json` as PortablePath, {
+            name: `my-lib`,
+            version: `1.0.0`,
+            peerDependencies: {
+              [`no-deps`]: `catalog:`,
+            },
+          });
+
+          await xfs.mkdirPromise(`${path}/packages/my-app` as PortablePath, {recursive: true});
+          await xfs.writeJsonPromise(`${path}/packages/my-app/package.json` as PortablePath, {
+            name: `my-app`,
+            version: `1.0.0`,
+            dependencies: {
+              [`my-lib`]: `workspace:*`,
+              [`no-deps`]: `2.0.0`,
+            },
+          });
+
+          await yarn.writeConfiguration(path, {
+            catalog: {
+              [`no-deps`]: `2.0.0`,
+            },
+          });
+
+          await run(`install`);
+
+          const lockfile = await xfs.readFilePromise(`${path}/yarn.lock` as PortablePath, `utf8`);
+
+          expect(lockfile).toMatch(/no-deps@npm:2\.0\.0/);
+        },
+      ),
+    );
   });
 });
