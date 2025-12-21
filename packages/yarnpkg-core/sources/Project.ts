@@ -876,9 +876,6 @@ export class Project {
 
         const pkg = await this.preparePackage(originalPkg, {resolver, resolveOptions});
 
-        // Copy resolved peerDependencies back to originalPkg so they're stored in the lockfile
-        originalPkg.peerDependencies = new Map(pkg.peerDependencies);
-
         const dependencyResolutions = miscUtils.allSettledSafe([...pkg.dependencies.values()].map(descriptor => {
           return scheduleDescriptorResolution(descriptor);
         }));
